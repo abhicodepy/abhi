@@ -1,0 +1,149 @@
+import pandas as pd
+import numpy as np
+import datetime as dt
+
+FR_pd = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\FR Tableau\Fill_Rate_Orderline.xlx.xlsx", "SO ID Level", 
+                      header=1, index_col=False, 
+                      usecols=("Aging Category",
+"BU",
+"Carrier Name",
+"Contract type",
+"Count Of Lines",
+"Country",
+"Delivery qty",
+"Delivery route",
+"Delivery Route Description",
+"Description",
+"DG",
+"Dropship Flag",
+"Equipment number",
+"Expired",
+"Fill Rate - Final Pareto (Automated + Manual)",
+"Fill Rate - System down",
+"Fill Rate 2019 Performance",
+"Fill Rate Performance",
+"Final Pareto (Automated + Manual) - 2019",
+"Final Pareto (Automated + Manual) - 2019",
+"Item",
+"KA",
+"Last Material*",
+"Local Repair",
+"Market",
+"Market Group",
+"material",
+"Material Availability",
+"MCP",
+"MD",
+"New Part",
+"Notification",
+"Order Processing",
+"Order quantity",
+"Plan Mrp Controller",
+"Plant",
+"Pod Type (HFP, POD)",
+"Primary New Buy Vendor",
+"Primary Repair Vendor",
+"Priority",
+"Priority Description",
+"RDD",
+"Route",
+"Route Days",
+"Sales doc type",
+"Sales document",
+"Sales header creation date",
+"Sales Org.",
+"SB",
+"Service work order type",
+"Service workorder",
+"SO-ID",
+"Sold to name",
+"Sold to party",
+"Stock Out",
+"storage location",
+"Sub Category",
+"Supplier Delivery Performance",
+"Supply Constraint",
+"system code",
+"system description",
+"Track number",
+"transporation zone",
+"Transportation",
+"Warehousing")).rename(columns={"Fill Rate - Final Pareto (Automated + Manual)":"Final Category(Dropship)",
+"Fill Rate 2019 Performance":"SO Level Performance",
+"Fill Rate Performance":"Dropship Performance",
+"Final Pareto (Automated + Manual) - 2019":"Final Category Count",
+"Final Pareto (Automated + Manual) - 2019":"Final Category",
+"Material Availability":"MA miss (Erlip MA)",
+"Plan Mrp Controller":"MCP controller",
+"Primary New Buy Vendor":"NB Vendor",
+"Primary Repair Vendor":"RP Vendor",
+"Sales Org.":"Sales org",
+"Sub Category":"Pareto",
+"Route Days":"Route days", 
+"Count Of Lines":"Count of Lines"})
+
+
+
+#SWO TYPE INCLUDED IN REPORT----
+SWO_File = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\FR Tableau\SWO Description.xlsx", "SWO", 
+                       Header=0).rename(columns={"Name":"Service Work Order Description", "SWO Type":"Service work order type"})
+FR_SWO= pd.merge(FR_pd, SWO_File, on="Service work order type", how='left')
+
+#Market Targets INCLUDED IN REPORT----
+MarketTarget_File = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\FR Tableau\SWO Description.xlsx", "Market Target", 
+                       Header=0)
+FR_Target= pd.merge(FR_SWO, MarketTarget_File, on="Market", how='left')
+
+
+#Pareto Targets INCLUDED IN REPORT----
+ParetoTarget_File = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\FR Tableau\SWO Description.xlsx", "Pareto Target", 
+                       Header=0)
+
+FR_ParetoTarget= pd.merge(FR_Target, ParetoTarget_File, on= "Final Category(Dropship)", how='left')
+
+#EXTRA FIELD IN FR TABLEAU REPORT---
+FR_ParetoTarget["BMC"]= FR_ParetoTarget["BU"]+"_"+FR_ParetoTarget["Market"]
+FR_ParetoTarget["BMC-2"]= FR_ParetoTarget["Market"]+"&"+FR_ParetoTarget["BU"]
+FR_ParetoTarget['Performance'] = FR_ParetoTarget['SO Level Performance'].apply(lambda x: 0 if x == "Miss" else(1 if x == "Hit" else  ""))
+FR_ParetoTarget["Week"] = FR_ParetoTarget["RDD"].dt.week.astype(str)
+FR_ParetoTarget["Year"] = FR_ParetoTarget["RDD"].dt.year.astype(str) 
+FR_ParetoTarget["Year-Week"] = FR_ParetoTarget["Year"] + "-" + FR_ParetoTarget["Week"]
+
+#Creat different dates column-----
+from datetime import *
+
+FR_ParetoTarget['RDD'] = pd.to_datetime(FR_ParetoTarget["RDD"])
+
+Z = []
+
+for d in FR_ParetoTarget['RDD']:
+    if d.day >= 26:
+        Z.append(d + timedelta(days=7))
+    else:
+        Z.append(d)
+
+
+
+FR_ParetoTarget = pd.concat([FR_ParetoTarget, pd.DataFrame(Z, columns = ["NRDD"])], axis = 1)
+
+FR_ParetoTarget['Year-Month'] = FR_ParetoTarget['NRDD'].dt.strftime('%Y-%m')
+
+from pandas.tseries.offsets import MonthEnd
+FR_ParetoTarget['Date'] = (FR_ParetoTarget['NRDD'] - pd.offsets.MonthBegin(1)).dt.floor('d')
+FR_ParetoTarget["Month1"]=FR_ParetoTarget["NRDD"].dt.strftime("%b")
+FR_ParetoTarget["Year"] = FR_ParetoTarget["NRDD"].dt.year.astype(str)
+FR_ParetoTarget["Month"] = FR_ParetoTarget["Month1"] + "\'" + FR_ParetoTarget["Year"]
+
+
+#Import Old FR tableau file----
+Old_Tableau_File = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\FR Tableau\FR_Tableau_22.06.2020.xlsx", Sheet_name = 0, Header=0)
+#Append new data in old FR Tableau data-----
+Old_New_Append = [Old_Tableau_File, FR_ParetoTarget]
+FR_Tableau = pd.concat(Old_New_Append, sort=False)
+
+FR_Tableau.drop(["NRDD", "Month1", "Year", "Week", "Frequency"], axis = 1, inplace = True)
+FR_Tableau[['material','Last Material*']] = FR_Tableau[['material','Last Material*']].astype(str) 
+
+
+#Export Tableau file---- Change the date in file name----
+FR_Tableau.to_excel(r"C:\Users\abhinay.mehra\Desktop\FR Tableau\FR_Tableau_Final.xlsx", index = False)
