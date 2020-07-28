@@ -1,0 +1,68 @@
+import pandas as pd
+import numpy as np
+
+#IMPORT AND CHANGE COLUMN NAMES-----------------------------------
+MA_pd = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\MPD\MA for NBP Countries.xlx.xlsx", Sheet_name=0,
+                      converters = {"Material": str, "Last Material": str},
+                      usecols=("SO-ID","Sales Org.","Mrp Controller","Stor. Location","Country","Material","Plant","RDD",
+                      "Service Work Order Type","Priority Description","Last Material","MCP","Market",
+                      "MA Hit/Miss","BU Short")).rename(columns={"SO-ID":"SO-ID","Sales Org.": "Sales Org","BU Short":"BU Short",
+                      "Mrp Controller":"MRP Controller","Stor. Location":"storage location",
+                      "Country":"Country","Material":"Material","Plant":"Plant","RDD":"RDD*",
+                      "Service Work Order Type":"SWO Type","Priority Description":"Priority Description",
+                      "Last Material":"Last Material","MCP":'MCP (Old)',"Market":"Market",
+                      "MA Hit/Miss":"Performance"})
+FR_pd = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\MPD\Fill_Rate_Orderline.xlx.xlsx", "SO ID Level", header=1, 
+                      index_col=False, 
+                      converters = {"Material": str, "Last Material": str},
+                      usecols=("SO-ID","Sales Org.","BU Short","Plan Mrp Controller","storage location",
+                      "Country","material","Plant","RDD","Service work order type","Priority Description",
+                      "Last Material*","MCP","Market","MA New")).rename(columns={"SO-ID":"SO-ID","Sales Org.": "Sales Org","BU Short":"BU Short",
+                      "Plan Mrp Controller":"MRP Controller","storage location":"storage location",
+                      "Country":"Country","material":"Material","Plant":"Plant","RDD":"RDD*",
+                      "Service work order type":"SWO Type","Priority Description":"Priority Description",
+                      "Last Material*":"Last Material","MCP":'MCP (Old)',"Market":"Market",
+                      "MA New":"Performance"})
+
+#Combine MA & FR Report to have MPD REPORT----------------------------------
+MPD = [FR_pd, MA_pd]
+Appended_MPD = pd.concat(MPD, sort=False)
+
+#Planned Location Field---------------------------------------------------
+Appended_MPD["Planned Locations"]= Appended_MPD["Plant"]+Appended_MPD["storage location"]+"U"
+
+#Include SWO Type from SWO file-----------------------------------------------
+SWO_pd = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\MPD\SWO Description.xlsx", Sheet=0, Header=0).rename(columns={"Name":"SWO Description"})
+MPD_SWO= pd.merge(Appended_MPD, SWO_pd, on='SWO Type', how='left')
+
+#Change Performance to numeric----------------------------------------------------
+MPD_SWO['MA Hit/Miss'] = MPD_SWO['Performance'].apply(lambda x: 1 if x == "Miss" else 0)
+
+#Creat different dates column-------------------------------------------------
+from datetime import *
+
+MPD_SWO['RDD*'] = pd.to_datetime(MPD_SWO['RDD*'])
+ Z = []
+
+for d in MPD_SWO['RDD*']:
+    if d.day >= 26:
+        Z.append(d + timedelta(days=7))
+    else:
+        Z.append(d)
+MPD_SWO = pd.concat([MPD_SWO, pd.DataFrame(Z, columns = ["NRDD"])], axis = 1)
+
+from pandas.tseries.offsets import MonthEnd
+MPD_SWO['Date'] = pd.to_datetime(MPD_SWO['NRDD'], format="%b%y").dt.date + MonthEnd(1)
+
+#Import Last week publish---------------------------------------------------------------------
+Old_MPD = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\POWER QUERY\MPD.xlsx", Sheet_name=0, 
+                        converters = {"Material": str, "Last Material": str})
+
+MPD_updated = [Old_MPD, MPD_SWO]
+Final_MPD = pd.concat(MPD_updated, sort=False)
+
+Final_MPD['Date'] = pd.to_datetime(Final_MPD['Date']).dt.strftime("%Y-%m-%d")
+Final_MPD.drop(["NRDD", "SWO Type", "Performance"], axis=1)
+
+#Output to be connected with Tableau file -----------------------------
+Final_MPD.to_excel(r"C:\Users\abhinay.mehra\Desktop\MPD\MPD_Tableau_Final.xlsx", index = False)
