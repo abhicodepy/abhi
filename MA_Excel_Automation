@@ -1,0 +1,142 @@
+import pandas as pd
+import numpy as np
+import datetime as dt
+
+MA_pd = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\MA Tableau\MA for NBP Countries.xlx.xlsx", "Raw Data", 
+                      header=0, index_col=False, 
+                      usecols=("Sales Document",
+"Item",
+"SO-ID",
+"Sales Doc. Type",
+"Sales Org.",
+"Sales Item Dt",
+"BU Full",
+"BU Short",
+"BU ID",
+"Region",
+"Mrp Controller",
+"Sales Deliv Prio",
+"Item category",
+"Sold-to party",
+"Stor. Location",
+"OACM SSR",
+"OACM group",
+"OACM Cluster",
+"Name",
+"Country",
+"Material",
+"MCP",
+"Plant",
+"Route",
+"Sales Profit Center",
+"Erlip Exp Creation Delivery",
+"RDD",
+"Service Work Order",
+"Service Work Order Type",
+"Priority",
+"Priority Description",
+"Last Material",
+"Part Nature",
+"Pareto Category",
+"Pareto Excluding Order Processing",
+"Analysis ",
+"Comment",
+"Description",
+"Dhcain Spec Status",
+"Delivery Item Date Correct - Local Time",
+"Mrp Type",
+"Planning Group*",
+"MA miss (Erlip MA)",
+"Order Quantity",
+"Product Hierarchy",
+"System Code",
+"System Description",
+"Contract Type",
+"Market Group",
+"Market",
+"Dropship Flag",
+"MA new",
+"MA Hit/Miss",
+"Fullfillment Location",
+"Parent Location",
+"MA Automation Pareto",
+"MA Automation Detailed Pareto",
+"Criteria",
+"Primary New Buy Vendor",
+"Primary Repair Vendor")).rename(columns={"Item":"Sales Order Item",
+"SO-ID":"SOID",
+"Sales Org.":"Sales Organization",
+"Sales Item Dt":"Sales Item Date (Date and Time)",
+"BU Full":"Bu Name",
+"BU Short":"BU",
+"Sales Deliv Prio":"Delivery Prior.",
+"Stor. Location":"Storage Location",
+"Sales Profit Center":"Profit Center",
+"Erlip Exp Creation Delivery":"Sales Item Dt Cgi *",
+"RDD":"RDD *",
+"Service Work Order":"SWO",
+"Part Nature":"Segment",
+"Delivery Item Date Correct - Local Time":"Corrected Deliv Item Date *",
+"MA miss (Erlip MA)":"Erlip Ma",
+"Market":"KM",
+"Dropship Flag":"Dropship"})
+
+#SWO TYPE INCLUDED IN REPORT----
+SWO_File = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\MA Tableau\SWO_MA Description.xlsx", "SWO", 
+                       Header=0).rename(columns={"Name": 'SWO Description', "SWO Type":"Service Work Order Type"})
+MA_SWO = pd.merge(MA_pd, SWO_File, on="Service Work Order Type", how='left')
+
+#EXTRA FIELD IN MA TABLEAU REPORT---
+MA_SWO["BU_Market_Combination"]= MA_SWO["BU"]+"_"+MA_SWO["KM"]
+MA_SWO["BMC2"]= MA_SWO["KM"]+MA_SWO["BU"]
+MA_SWO['Performance'] = MA_SWO['MA Hit/Miss'].apply(lambda x: 0 if x == "Miss" else(1 if x == "Hit" else  ""))
+MA_SWO['Count Of Lines'] = MA_SWO['MA Hit/Miss'].apply(lambda x: 1 if x == "Miss" else 1)
+
+
+#Creat different dates column-----
+from datetime import *
+
+MA_SWO['RDD *'] = pd.to_datetime(MA_SWO["RDD *"])
+
+Z = []
+
+for d in MA_SWO['RDD *']:
+    if d.day >= 26:
+        Z.append(d + timedelta(days=7))
+    else:
+        Z.append(d)
+MA_SWO = pd.concat([MA_SWO, pd.DataFrame(Z, columns = ["NRDD"])], axis = 1)
+MA_SWO['Year-Month'] = MA_SWO['NRDD'].dt.strftime('%Y-%m')
+
+from pandas.tseries.offsets import MonthEnd
+MA_SWO['Date'] = (MA_SWO['NRDD'] - pd.offsets.MonthBegin(1)).dt.floor('d')
+MA_SWO["Month1"]= MA_SWO["NRDD"].dt.strftime("%b")
+MA_SWO["Year"] = MA_SWO["NRDD"].dt.year.astype(str)
+MA_SWO["Month"] = MA_SWO["Month1"] + MA_SWO["Year"]
+MA_SWO["Week"] = MA_SWO["RDD *"].dt.week.astype(str)
+MA_SWO["Year"] = MA_SWO["RDD *"].dt.year.astype(str) 
+MA_SWO["Year-Week"] = MA_SWO["Year"] + "-" + MA_SWO["Week"]
+
+#Market Targets INCLUDED IN REPORT----
+MarketTarget_File = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\MA Tableau\SWO_MA Description.xlsx", "Market Target", 
+                       Header=0)
+
+MA_MarketTarget= pd.merge(MA_SWO, MarketTarget_File, on= "KM", how='left')
+
+
+
+#Import Old MA tableau file----
+Old_Tableau_File = pd.read_excel(r"C:\Users\abhinay.mehra\Desktop\MA Tableau\MA_Tableau_22.06.2020.xlsx", 'Sheet1', Header=0)
+
+#Append new data in old MA Tableau data-----
+Old_New_Append = [Old_Tableau_File, MA_MarketTarget]
+MA_Tableau = pd.concat(Old_New_Append, sort=False)
+
+MA_Tableau.drop(["NRDD", "Month1", "Year", "Week", "Frequency"], axis = 1, inplace = True)
+MA_Tableau[["Last Material",'Material']] = MA_Tableau[["Last Material",'Material']].astype(str) 
+
+
+#Export Tableau file---- Change the date in file name----
+MA_Tableau.to_excel(r"C:\Users\abhinay.mehra\Desktop\MA Tableau\MA_Tableau_Final.xlsx", index = False)
+
+
